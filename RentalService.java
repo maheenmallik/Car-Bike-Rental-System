@@ -71,6 +71,20 @@ public class RentalService {
         return list;
     }
 
+    /** Deletes a vehicle (and its finished rentals). A vehicle that is out on rent cannot be deleted. */
+    public synchronized void removeVehicle(String id) throws InvalidInputException {
+        Vehicle v = findVehicle(id);
+        if (v == null) {
+            throw new InvalidInputException("Vehicle not found: " + id);
+        }
+        if (!v.isAvailable()) {
+            throw new InvalidInputException(v.getId() + " is currently rented out. Return it first, then delete it.");
+        }
+        rentals.removeIf(r -> r.getVehicle() == v);     // its old history goes with it
+        vehicles.remove(v);
+        saveAll();
+    }
+
     // ====================== RENTING ======================
 
     public synchronized Rental rentVehicle(String vehicleId, Customer customer, LocalDate start, int days)
@@ -144,10 +158,38 @@ public class RentalService {
         return list;
     }
 
+    /** Deletes one finished rental from the history. Active rentals must be returned first. */
+    public synchronized void removeRental(String rentalId) throws InvalidInputException {
+        Rental r = findRental(rentalId);
+        if (r == null) {
+            throw new InvalidInputException("Rental not found: " + rentalId);
+        }
+        if (r.isActive()) {
+            throw new InvalidInputException("Rental " + rentalId + " is still active. Return the vehicle first.");
+        }
+        rentals.remove(r);
+        saveAll();
+    }
+
+    /** Deletes every finished rental (active rentals are kept). */
+    public synchronized void clearHistory() {
+        rentals.removeIf(r -> !r.isActive());
+        saveAll();
+    }
+
     // ====================== HELPERS ======================
 
+    /** Next ID = highest existing number + 1, so IDs stay unique even after deleting rentals. */
     private String nextRentalId() {
-        return String.format("R%03d", rentals.size() + 1);
+        int max = 0;
+        for (Rental r : rentals) {
+            try {
+                max = Math.max(max, Integer.parseInt(r.getRentalId().substring(1)));
+            } catch (NumberFormatException e) {
+                // ignore IDs that are not in the R### format
+            }
+        }
+        return String.format("R%03d", max + 1);
     }
 
     private void validateCustomer(Customer c) throws InvalidInputException {
