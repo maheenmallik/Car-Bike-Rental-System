@@ -1,7 +1,12 @@
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.time.LocalDate;
@@ -9,6 +14,7 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
@@ -16,13 +22,13 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
 
 /**
- * Main dashboard (Swing). Four tabs: Vehicles, Rent, Return, History.
+ * Main dashboard (Swing). Four pages: Vehicles, Rent, Return, History.
+ * A red header bar with buttons switches between the pages (CardLayout).
  * Implements OverdueChecker.Listener so the background thread can update the status bar.
  * This class only handles screens; all real logic lives in RentalService.
  */
@@ -49,30 +55,52 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     private final JTextField licenseField = new JTextField();
     private final JTextField startField = new JTextField(LocalDate.now().toString());
     private final JTextField daysField = new JTextField("1");
-    private final JLabel previewLabel = new JLabel(" ");
+    private final JLabel previewLabel = new JLabel();
     private final JTable activeTable = new JTable(activeModel);
     private final JLabel overdueLabel = new JLabel("Overdue rentals: 0");
     private int lastOverdueCount = 0;
 
+    // numbers shown in the coloured boxes on the Vehicles page
+    private final JLabel totalValue = new JLabel("0");
+    private final JLabel availableValue = new JLabel("0");
+    private final JLabel rentedValue = new JLabel("0");
+    private final JLabel overdueValue = new JLabel("0");
+
+    // header buttons + page switching
+    private final String[] pageNames = {"Vehicles", "Rent a Vehicle", "Return a Vehicle", "History"};
+    private final JButton[] navButtons = new JButton[4];
+    private final CardLayout cards = new CardLayout();
+    private final JPanel cardPanel = new JPanel(cards);
+    private String currentPage = "Vehicles";
+
     public MainFrame(RentalService service) {
-        super("Car / Bike Rental System - Admin");
+        super(Theme.BRAND + " - Admin");
         this.service = service;
 
-        setSize(900, 560);
+        setIconImage(new ImageIcon("images/icon.png").getImage());
+        setSize(1020, 690);
+        setMinimumSize(new Dimension(980, 640));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Vehicles", buildVehiclePanel());
-        tabs.addTab("Rent a Vehicle", buildRentPanel());
-        tabs.addTab("Return a Vehicle", buildReturnPanel());
-        tabs.addTab("History", buildHistoryPanel());
-        add(tabs, BorderLayout.CENTER);
+        cardPanel.add(buildVehiclePanel(), pageNames[0]);
+        cardPanel.add(buildRentPanel(), pageNames[1]);
+        cardPanel.add(buildReturnPanel(), pageNames[2]);
+        cardPanel.add(buildHistoryPanel(), pageNames[3]);
 
+        add(buildHeader(), BorderLayout.NORTH);
+        add(cardPanel, BorderLayout.CENTER);
+
+        // status bar at the bottom
         JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        statusBar.setBackground(Theme.DARK_RED);
+        overdueLabel.setFont(Theme.BOLD);
+        overdueLabel.setForeground(Color.WHITE);
         statusBar.add(overdueLabel);
         add(statusBar, BorderLayout.SOUTH);
 
+        showPage(pageNames[0]);
+        clearPreview();
         refreshAll();
 
         // Start the background overdue-checking thread (checks every 5 seconds)
@@ -90,26 +118,144 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     }
 
     // =====================================================================
-    //  TAB 1: VEHICLES
+    //  HEADER (red bar with the name and the page buttons)
+    // =====================================================================
+    private JPanel buildHeader() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Theme.RED);
+        header.setPreferredSize(new Dimension(100, 62));
+
+        JLabel brand = new JLabel(Theme.BRAND, new ImageIcon("images/brand_car.png"), JLabel.LEFT);
+        brand.setFont(Theme.TITLE_FONT);
+        brand.setForeground(Color.WHITE);
+        brand.setIconTextGap(10);
+        brand.setBorder(BorderFactory.createEmptyBorder(0, 18, 0, 24));
+        header.add(brand, BorderLayout.WEST);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        buttons.setBackground(Theme.RED);
+        for (int i = 0; i < pageNames.length; i++) {
+            final JButton b = new JButton(pageNames[i]);
+            final String page = pageNames[i];
+            b.setBackground(Theme.RED);
+            b.setForeground(Color.WHITE);
+            b.setFont(Theme.BOLD);
+            b.setBorder(null);
+            b.setFocusPainted(false);
+            b.setPreferredSize(new Dimension(138, 62));
+            b.addActionListener(e -> showPage(page));
+            // darker red while the mouse is over the button
+            b.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    b.setBackground(Theme.DARK_RED);
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    updateHeaderColours();
+                }
+            });
+            navButtons[i] = b;
+            buttons.add(b);
+        }
+        header.add(buttons, BorderLayout.CENTER);
+
+        JButton logout = new JButton("Logout");
+        logout.setBackground(Theme.RED);
+        logout.setForeground(Color.WHITE);
+        logout.setFont(Theme.BOLD);
+        logout.setFocusPainted(false);
+        logout.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.WHITE, 2),
+                BorderFactory.createEmptyBorder(6, 18, 6, 18)));
+        logout.addActionListener(e -> handleLogout());
+        JPanel logoutPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 13));
+        logoutPanel.setBackground(Theme.RED);
+        logoutPanel.add(logout);
+        header.add(logoutPanel, BorderLayout.EAST);
+        return header;
+    }
+
+    private void showPage(String page) {
+        currentPage = page;
+        cards.show(cardPanel, page);
+        updateHeaderColours();
+    }
+
+    /** The button of the page that is open is dark red, the others are normal red. */
+    private void updateHeaderColours() {
+        for (JButton b : navButtons) {
+            b.setBackground(b.getText().equals(currentPage) ? Theme.DARK_RED : Theme.RED);
+        }
+    }
+
+    private void handleLogout() {
+        checker.stop();
+        dispose();
+        new LoginScreen().setVisible(true);
+    }
+
+    /** One page = coloured title band on top + content below, on a light pink background. */
+    private JPanel newPage(String title, String subtitle, JPanel content) {
+        JPanel page = new JPanel(new BorderLayout());
+        page.setBackground(Theme.PINK);
+        page.add(Theme.pageTitle(title, subtitle), BorderLayout.NORTH);
+        content.setOpaque(false);
+        content.setBorder(BorderFactory.createEmptyBorder(18, 26, 18, 26));
+        page.add(content, BorderLayout.CENTER);
+        return page;
+    }
+
+    private JScrollPane tableScroll(JTable table) {
+        Theme.styleTable(table);
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.getViewport().setBackground(Color.WHITE);
+        scroll.setBorder(BorderFactory.createLineBorder(Theme.LINE));
+        return scroll;
+    }
+
+    // =====================================================================
+    //  PAGE 1: VEHICLES
     // =====================================================================
     private JPanel buildVehiclePanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JPanel content = new JPanel(new BorderLayout(0, 12));
 
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        top.add(new JLabel("Show type:"));
-        top.add(typeFilter);
+        // four coloured number boxes
+        JPanel boxes = new JPanel(new GridLayout(1, 4, 14, 0));
+        boxes.setOpaque(false);
+        boxes.add(Theme.statBox("Total fleet", totalValue, new Color(186, 28, 40)));
+        boxes.add(Theme.statBox("Available now", availableValue, new Color(226, 70, 66)));
+        boxes.add(Theme.statBox("On rent", rentedValue, new Color(140, 20, 34)));
+        boxes.add(Theme.statBox("Overdue", overdueValue, new Color(70, 50, 56)));
+
+        JPanel filter = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        filter.setOpaque(false);
+        JLabel show = Theme.label("Show type:");
+        show.setFont(Theme.BOLD);
+        typeFilter.setFont(Theme.NORMAL);
+        typeFilter.setBackground(Color.WHITE);
         typeFilter.addActionListener(e -> refreshVehicles());
-        panel.add(top, BorderLayout.NORTH);
+        filter.add(show);
+        filter.add(typeFilter);
 
-        panel.add(new JScrollPane(new JTable(vehicleModel)), BorderLayout.CENTER);
+        JPanel top = new JPanel(new BorderLayout(0, 12));
+        top.setOpaque(false);
+        top.add(boxes, BorderLayout.NORTH);
+        top.add(filter, BorderLayout.SOUTH);
+        content.add(top, BorderLayout.NORTH);
+
+        content.add(tableScroll(new JTable(vehicleModel)), BorderLayout.CENTER);
 
         JButton addBtn = new JButton("Add New Vehicle");
+        Theme.styleButton(addBtn, Theme.BLUE);
         addBtn.addActionListener(e -> showAddVehicleDialog());
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottom.setOpaque(false);
         bottom.add(addBtn);
-        panel.add(bottom, BorderLayout.SOUTH);
-        return panel;
+        content.add(bottom, BorderLayout.SOUTH);
+
+        return newPage("Fleet", "All cars, bikes and scooters and whether they are available", content);
     }
 
     private void showAddVehicleDialog() {
@@ -184,33 +330,76 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     }
 
     // =====================================================================
-    //  TAB 2: RENT
+    //  PAGE 2: RENT
     // =====================================================================
     private JPanel buildRentPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(20, 40, 20, 40));
-
-        JPanel form = new JPanel(new GridLayout(0, 2, 8, 10));
-        form.add(new JLabel("Select vehicle (available only):")); form.add(vehicleCombo);
-        form.add(new JLabel("Customer name:"));                    form.add(nameField);
-        form.add(new JLabel("Phone (10 digits):"));                form.add(phoneField);
-        form.add(new JLabel("Driving licence no.:"));              form.add(licenseField);
-        form.add(new JLabel("Start date (yyyy-MM-dd):"));          form.add(startField);
-        form.add(new JLabel("Number of days:"));                   form.add(daysField);
-        panel.add(form, BorderLayout.NORTH);
+        // white card with the form
+        JPanel form = new JPanel(new GridLayout(0, 2, 10, 14));
+        form.setOpaque(false);
+        form.add(Theme.label("Select vehicle (available only):")); form.add(vehicleCombo);
+        form.add(Theme.label("Customer name:"));                    form.add(nameField);
+        form.add(Theme.label("Phone (10 digits):"));                form.add(phoneField);
+        form.add(Theme.label("Driving licence no.:"));              form.add(licenseField);
+        form.add(Theme.label("Start date (yyyy-MM-dd):"));          form.add(startField);
+        form.add(Theme.label("Number of days:"));                   form.add(daysField);
+        vehicleCombo.setFont(Theme.NORMAL);
+        vehicleCombo.setBackground(Color.WHITE);
+        Theme.styleField(nameField);
+        Theme.styleField(phoneField);
+        Theme.styleField(licenseField);
+        Theme.styleField(startField);
+        Theme.styleField(daysField);
 
         previewLabel.setHorizontalAlignment(JLabel.CENTER);
-        panel.add(previewLabel, BorderLayout.CENTER);
+        previewLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Theme.LINE),
+                BorderFactory.createEmptyBorder(12, 10, 12, 10)));
 
         JButton previewBtn = new JButton("Preview Bill");
+        Theme.styleButton(previewBtn, Theme.BLUE);
         previewBtn.addActionListener(e -> handlePreview());
         JButton rentBtn = new JButton("Confirm Rental");
+        Theme.styleButton(rentBtn, Theme.BLUE);
         rentBtn.addActionListener(e -> handleRent());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 5));
+        buttons.setOpaque(false);
         buttons.add(previewBtn);
         buttons.add(rentBtn);
-        panel.add(buttons, BorderLayout.SOUTH);
-        return panel;
+
+        JPanel card = new JPanel(new BorderLayout(0, 16));
+        card.setBackground(Color.WHITE);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Theme.LINE),
+                BorderFactory.createEmptyBorder(20, 24, 16, 24)));
+        card.add(form, BorderLayout.NORTH);
+        card.add(previewLabel, BorderLayout.CENTER);
+        card.add(buttons, BorderLayout.SOUTH);
+
+        JPanel left = new JPanel(new BorderLayout());
+        left.setOpaque(false);
+        left.add(card, BorderLayout.NORTH);
+
+        // big faint picture on the free space at the right
+        JLabel art = new JLabel(new ImageIcon("images/rent_art.png"));
+        art.setVerticalAlignment(JLabel.BOTTOM);
+
+        JPanel content = new JPanel(new BorderLayout(20, 0));
+        content.add(left, BorderLayout.CENTER);
+        content.add(art, BorderLayout.EAST);
+
+        return newPage("Rent a vehicle", "Choose an available vehicle and enter the customer's details", content);
+    }
+
+    private void clearPreview() {
+        previewLabel.setFont(Theme.NORMAL);
+        previewLabel.setForeground(Color.GRAY);
+        previewLabel.setText("The estimated bill will be shown here");
+    }
+
+    private void showPreview(String text) {
+        previewLabel.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        previewLabel.setForeground(Theme.RED);
+        previewLabel.setText(text);
     }
 
     private void handlePreview() {
@@ -220,7 +409,7 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
             int days = Integer.parseInt(daysField.getText().trim());
             if (days < 1) throw new InvalidInputException("Days must be at least 1.");
             // POLYMORPHISM: same call, different result depending on the real vehicle type
-            previewLabel.setText(String.format("Estimated bill for %d day(s): Rs. %.2f",
+            showPreview(String.format("Estimated bill for %d day(s): Rs. %.2f",
                     days, v.calculateRent(days)));
         } catch (NumberFormatException ex) {
             showError("Number of days must be a whole number.");
@@ -249,7 +438,7 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
             licenseField.setText("");
             daysField.setText("1");
             startField.setText(LocalDate.now().toString());
-            previewLabel.setText(" ");
+            clearPreview();
             refreshAll();
         } catch (VehicleNotAvailableException | InvalidInputException ex) {
             showError(ex.getMessage());
@@ -261,19 +450,24 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     }
 
     // =====================================================================
-    //  TAB 3: RETURN
+    //  PAGE 3: RETURN
     // =====================================================================
     private JPanel buildReturnPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        panel.add(new JScrollPane(activeTable), BorderLayout.CENTER);
+        JPanel content = new JPanel(new BorderLayout(0, 12));
+        content.add(tableScroll(activeTable), BorderLayout.CENTER);
 
+        JLabel hint = Theme.label("Select a rental in the table, then press the button.");
+        hint.setForeground(Color.GRAY);
         JButton returnBtn = new JButton("Return Selected Vehicle");
+        Theme.styleButton(returnBtn, Theme.BLUE);
         returnBtn.addActionListener(e -> handleReturn());
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        bottom.add(returnBtn);
-        panel.add(bottom, BorderLayout.SOUTH);
-        return panel;
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.setOpaque(false);
+        bottom.add(hint, BorderLayout.WEST);
+        bottom.add(returnBtn, BorderLayout.EAST);
+        content.add(bottom, BorderLayout.SOUTH);
+
+        return newPage("Return a vehicle", "Close a rental and see the final bill", content);
     }
 
     private void handleReturn() {
@@ -300,13 +494,12 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     }
 
     // =====================================================================
-    //  TAB 4: HISTORY
+    //  PAGE 4: HISTORY
     // =====================================================================
     private JPanel buildHistoryPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        panel.add(new JScrollPane(new JTable(historyModel)), BorderLayout.CENTER);
-        return panel;
+        JPanel content = new JPanel(new BorderLayout());
+        content.add(tableScroll(new JTable(historyModel)), BorderLayout.CENTER);
+        return newPage("Rental history", "All completed rentals and the amount paid", content);
     }
 
     // =====================================================================
@@ -317,6 +510,17 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
         refreshAvailableCombo();
         refreshActive();
         refreshHistory();
+        refreshNumbers();
+    }
+
+    /** Updates the four coloured boxes on the Vehicles page. */
+    private void refreshNumbers() {
+        List<Vehicle> all = service.getAllVehicles();
+        int available = service.getAvailableVehicles().size();
+        totalValue.setText(String.valueOf(all.size()));
+        availableValue.setText(String.valueOf(available));
+        rentedValue.setText(String.valueOf(all.size() - available));
+        overdueValue.setText(String.valueOf(service.getOverdue(LocalDate.now()).size()));
     }
 
     private void refreshVehicles() {
@@ -377,7 +581,9 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     public void onOverdueUpdate(List<Rental> overdueRentals) {
         int count = overdueRentals.size();
         overdueLabel.setText("Overdue rentals: " + count);
-        overdueLabel.setForeground(count == 0 ? new Color(0, 120, 0) : Color.RED);
+        // white when there are none, yellow when something is overdue
+        overdueLabel.setForeground(count == 0 ? Color.WHITE : new Color(255, 205, 70));
+        overdueValue.setText(String.valueOf(count));
         if (count != lastOverdueCount) {      // only redraw the table when something changed
             lastOverdueCount = count;
             refreshActive();

@@ -82,7 +82,9 @@ On first run, six sample vehicles are created automatically.
 .
 ├── Main.java                         # Entry point
 ├── LoginScreen.java                  # Admin login window
-├── MainFrame.java                    # Main dashboard (4 tabs)
+├── MainFrame.java                    # Main dashboard (header + 4 pages)
+├── Theme.java                        # Colours, fonts and small styling helpers
+├── images/                           # Pictures used by the screens (ImageIcon)
 │
 ├── Vehicle.java                      # Abstract base class
 ├── Car.java  Bike.java  Scooter.java # Concrete vehicle types
@@ -97,6 +99,9 @@ On first run, six sample vehicles are created automatically.
 ├── VehicleNotAvailableException.java # Custom exception
 └── InvalidInputException.java        # Custom exception
 ```
+
+> Run the program from the project folder (`java Main`) so the `images/` folder is found.
+> To recolour the app or rename it, change the constants at the top of `Theme.java`.
 
 ### Class Diagram
 
@@ -211,7 +216,7 @@ R001,C101,Asha K,9876543210,DL123,2026-11-02,2,2026-11-07,5550.0
 
 ## 📸 Screenshots
 
-_Add screenshots here after running the app (e.g. `docs/login.png`, `docs/vehicles.png`)._
+_Add screenshots here after running the app._
 
 ---
 
