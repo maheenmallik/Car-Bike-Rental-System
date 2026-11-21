@@ -56,7 +56,9 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     private final JTextField startField = new JTextField(LocalDate.now().toString());
     private final JTextField daysField = new JTextField("1");
     private final JLabel previewLabel = new JLabel();
+    private final JTable vehicleTable = new JTable(vehicleModel);
     private final JTable activeTable = new JTable(activeModel);
+    private final JTable historyTable = new JTable(historyModel);
     private final JLabel overdueLabel = new JLabel("Overdue rentals: 0");
     private int lastOverdueCount = 0;
 
@@ -245,17 +247,40 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
         top.add(filter, BorderLayout.SOUTH);
         content.add(top, BorderLayout.NORTH);
 
-        content.add(tableScroll(new JTable(vehicleModel)), BorderLayout.CENTER);
+        content.add(tableScroll(vehicleTable), BorderLayout.CENTER);
 
+        JButton deleteBtn = new JButton("Delete Selected Vehicle");
+        Theme.styleButton(deleteBtn, Theme.RED);
+        deleteBtn.addActionListener(e -> handleDeleteVehicle());
         JButton addBtn = new JButton("Add New Vehicle");
         Theme.styleButton(addBtn, Theme.BLUE);
         addBtn.addActionListener(e -> showAddVehicleDialog());
-        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
         bottom.setOpaque(false);
+        bottom.add(deleteBtn);
         bottom.add(addBtn);
         content.add(bottom, BorderLayout.SOUTH);
 
         return newPage("Fleet", "All cars, bikes and scooters and whether they are available", content);
+    }
+
+    private void handleDeleteVehicle() {
+        int row = vehicleTable.getSelectedRow();
+        if (row < 0) {
+            showError("Please select a vehicle in the table first.");
+            return;
+        }
+        String id = (String) vehicleModel.getValueAt(row, 0);
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Delete vehicle " + id + "?\nIts rental history will be deleted too.",
+                "Confirm delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) return;
+        try {
+            service.removeVehicle(id);
+            refreshAll();
+        } catch (InvalidInputException ex) {
+            showError(ex.getMessage());
+        }
     }
 
     private void showAddVehicleDialog() {
@@ -497,9 +522,48 @@ public class MainFrame extends JFrame implements OverdueChecker.Listener {
     //  PAGE 4: HISTORY
     // =====================================================================
     private JPanel buildHistoryPanel() {
-        JPanel content = new JPanel(new BorderLayout());
-        content.add(tableScroll(new JTable(historyModel)), BorderLayout.CENTER);
+        JPanel content = new JPanel(new BorderLayout(0, 12));
+        content.add(tableScroll(historyTable), BorderLayout.CENTER);
+
+        JButton deleteBtn = new JButton("Delete Selected");
+        Theme.styleButton(deleteBtn, Theme.RED);
+        deleteBtn.addActionListener(e -> handleDeleteHistory());
+        JButton clearBtn = new JButton("Clear All History");
+        Theme.styleButton(clearBtn, Theme.DARK_RED);
+        clearBtn.addActionListener(e -> handleClearHistory());
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
+        bottom.setOpaque(false);
+        bottom.add(deleteBtn);
+        bottom.add(clearBtn);
+        content.add(bottom, BorderLayout.SOUTH);
+
         return newPage("Rental history", "All completed rentals and the amount paid", content);
+    }
+
+    private void handleDeleteHistory() {
+        int row = historyTable.getSelectedRow();
+        if (row < 0) {
+            showError("Please select a rental in the table first.");
+            return;
+        }
+        String rentalId = (String) historyModel.getValueAt(row, 0);
+        int choice = JOptionPane.showConfirmDialog(this, "Delete rental " + rentalId + " from the history?",
+                "Confirm delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) return;
+        try {
+            service.removeRental(rentalId);
+            refreshAll();
+        } catch (InvalidInputException ex) {
+            showError(ex.getMessage());
+        }
+    }
+
+    private void handleClearHistory() {
+        int choice = JOptionPane.showConfirmDialog(this, "Delete ALL completed rentals from the history?",
+                "Confirm delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) return;
+        service.clearHistory();
+        refreshAll();
     }
 
     // =====================================================================
